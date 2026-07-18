@@ -7,13 +7,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiohttp import web
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.webhook.aiohttp_server import TokenBasedRequestHandler, setup_application
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MASTERS_CHAT_ID = int(os.getenv("MASTERS_CHAT_ID"))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") # Например: https://your-app.onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=BOT_TOKEN)
@@ -42,6 +42,7 @@ async def service_chosen(callback: CallbackQuery, state: FSMContext):
     await state.update_data(service=callback.data.split("_")[1])
     await callback.message.answer("Укажите район:")
     await state.set_state(OrderSteps.entering_area)
+    await callback.answer()
 
 @dp.message(OrderSteps.entering_area)
 async def area_entered(message: Message, state: FSMContext):
@@ -63,26 +64,33 @@ async def master_take(callback: CallbackQuery, state: FSMContext):
     await bot.send_message(callback.from_user.id, f"Заказ №{order_id}. Напишите цену и время.")
     await state.set_state(MasterSteps.waiting_for_price)
     await state.update_data(order_id=order_id)
+    await callback.answer()
 
 @dp.message(MasterSteps.waiting_for_price)
 async def process_master_price(message: Message, state: FSMContext):
     data = await state.get_data()
     order_id = data.get("order_id")
     client_id = ORDERS_DB[order_id]["client_chat_id"]
-    await bot.send_message(client_id, f"👔 Ответ мастера №{order_id}:\n{message.text}")
+    await bot.send_message(client_id, f"👔 Ответ мастера по заявке №{order_id}:\n{message.text}")
     await message.answer("✅ Отправлено!")
     await state.clear()
 
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
+async def on_startup(app: web.Application):
+    # Жестко сбрасываем старые хвосты и ставим новый вебхук
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(f"{WEBHOOK_URL}/webhook")
 
 def main():
     app = web.Application()
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    webhook_requests_handler.register(app, path="/")
-    setup_application(app, dp, bot=bot)
     
-    dp.startup.register(on_startup)
+    # Используем безопасный обработчик по токену, путь теперь /webhook
+    handler = TokenBasedRequestHandler(dispatcher=dp, bot=bot)
+    handler.register(app, path="/webhook")
+    
+    setup_application(app, dp, bot=bot)
+    app.on_startup.append(on_startup)
+    
+    # Запуск сервера на порту 10000 наружу
     web.run_app(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
