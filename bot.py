@@ -99,8 +99,15 @@ async def process_master_price(message: Message, state: FSMContext):
 
 # --- Настройка вебхука ---
 async def on_startup(app: web.Application):
+    # Удаляем старый вебхук
     await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(WEBHOOK_URL)
+    
+    # Ставим новый с явным разрешением на сообщения и колбэки
+    await bot.set_webhook(
+        WEBHOOK_URL,
+        allowed_updates=["message", "callback_query"]
+    )
+    print(f"Webhook set to {WEBHOOK_URL} with allowed_updates=[message, callback_query]")
 
 def main():
     app = web.Application()
