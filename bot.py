@@ -76,21 +76,20 @@ async def process_master_price(message: Message, state: FSMContext):
     await state.clear()
 
 async def on_startup(app: web.Application):
-    # Жестко сбрасываем старые хвосты и ставим новый вебхук
     await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(f"{WEBHOOK_URL}/webhook")
+    # Добавляем путь с токеном
+    await bot.set_webhook(f"{WEBHOOK_URL}/webhook/{BOT_TOKEN}")
 
 def main():
     app = web.Application()
     
-    # Используем безопасный обработчик по токену, путь теперь /webhook
+    # Регистрация пути с плейсхолдером {bot_token}
     handler = TokenBasedRequestHandler(dispatcher=dp, bot=bot)
-    handler.register(app, path="/webhook")
+    handler.register(app, path="/webhook/{bot_token}")
     
     setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
     
-    # Запуск сервера на порту 10000 наружу
     web.run_app(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
