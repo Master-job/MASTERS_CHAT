@@ -1,5 +1,4 @@
 import os
-import asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -8,10 +7,11 @@ from aiogram.filters import Command
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# Настройки из переменных окружения
+# --- Конфиг ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MASTERS_CHAT_ID = int(os.getenv("MASTERS_CHAT_ID"))
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_PATH = "/" 
 PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=BOT_TOKEN)
@@ -39,7 +39,8 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @dp.callback_query(OrderSteps.choosing_service, F.data.startswith("service_"))
 async def service_chosen(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(service=callback.data.split("_")[1])
+    service = callback.data.split("_", 1)[1]
+    await state.update_data(service=service)
     await callback.message.answer("Укажите район:")
     await state.set_state(OrderSteps.entering_area)
     await callback.answer()
@@ -49,41 +50,38 @@ async def area_entered(message: Message, state: FSMContext):
     global order_counter
     data = await state.get_data()
     order_id = order_counter
-    ORDERS_DB[order_id] = {"client_chat_id": message.chat.id, "details": f"Заявка №{order_id}\nУслуга: {data['service']}\nРайон: {message.text}"}
+    
+    ORDERS_DB[order_id] = {
+        "client_chat_id": message.chat.id,
+        "details": f"Заявка №{order_id}\nУслуга: {data['service']}\nРайон: {message.text}",
+        "is_taken": False
+    }
     order_counter += 1
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🛠 Взять заказ", callback_data=f"take_{order_id}")]])
-    await bot.send_message(MASTERS_CHAT_ID, text=ORDERS_DB[order_id]["details"], reply_markup=keyboard)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛠 Взять заказ", callback_data=f"take_{order_id}")]
+    ])
+    
+    await bot.send_message(MASTERS_CHAT_ID, ORDERS_DB[order_id]["details"], reply_markup=keyboard)
     await message.answer("Заявка передана!")
     await state.clear()
 
 @dp.callback_query(F.data.startswith("take_"))
 async def master_take(callback: CallbackQuery, state: FSMContext):
-    # Разрезаем данные: take_123 -> ["take", "123"]
-    order_id = int(callback.data.split("_")[1])
-    
-    # Защита от дурака: проверяем, существует ли заказ и свободен ли он
+    order_id = int(callback.data.split("_", 1)[1])
     order = ORDERS_DB.get(order_id)
     
     if not order:
-        await callback.answer("❌ Заказ не найден (возможно, устарел).", show_alert=True)
+        await callback.answer("❌ Заказ не найден.", show_alert=True)
         return
-        
     if order.get("is_taken"):
-        await callback.answer("🛑 Этот заказ УЖЕ забрал другой мастер!", show_alert=True)
+        await callback.answer("🛑 Этот заказ уже забрал другой мастер!", show_alert=True)
         return
-
-    # Локируем заказ
-    order["is_taken"] = True
     
-    # Обновляем интерфейс
+    order["is_taken"] = True
     new_text = f"{callback.message.text}\n\n✅ ВЗЯЛ: @{callback.from_user.username}"
     await callback.message.edit_text(text=new_text, reply_markup=None)
-    
-    # Пишем мастеру
-    await bot.send_message(callback.from_user.id, f"✅ Принято! Заказ №{order_id}.\nНапишите клиенту цену и время выполнения.")
-    
-    # Сохраняем ID заказа в состояние, чтобы потом отправить цену именно по нему
+    await bot.send_message(callback.from_user.id, f"✅ Принято! Заказ №{order_id}.\nНапишите клиенту цену и время.")
     await state.set_state(MasterSteps.waiting_for_price)
     await state.update_data(order_id=order_id)
     await callback.answer()
@@ -91,34 +89,27 @@ async def master_take(callback: CallbackQuery, state: FSMContext):
 @dp.message(MasterSteps.waiting_for_price)
 async def process_master_price(message: Message, state: FSMContext):
     data = await state.get_data()
-    order_id = data.get("order_id")
+    order_id = data["order_id"]
     client_id = ORDERS_DB[order_id]["client_chat_id"]
     await bot.send_message(client_id, f"👔 Ответ мастера по заявке №{order_id}:\n{message.text}")
     await message.answer("✅ Отправлено!")
     await state.clear()
 
-# --- Настройка вебхука ---
+# --- Вебхук ---
 async def on_startup(app: web.Application):
-    # Удаляем старый вебхук
     await bot.delete_webhook(drop_pending_updates=True)
-    
-    # Ставим новый с явным разрешением на сообщения и колбэки
     await bot.set_webhook(
         WEBHOOK_URL,
         allowed_updates=["message", "callback_query"]
     )
-    print(f"Webhook set to {WEBHOOK_URL} with allowed_updates=[message, callback_query]")
+    print(f"Webhook set to {WEBHOOK_URL}")
 
 def main():
     app = web.Application()
-    
-    # Регистрация обработчика на корень
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    handler.register(app, path="/")
-    
+    handler.register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
-    
     web.run_app(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
