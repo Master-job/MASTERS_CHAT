@@ -59,9 +59,31 @@ async def area_entered(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("take_"))
 async def master_take(callback: CallbackQuery, state: FSMContext):
+    # Разрезаем данные: take_123 -> ["take", "123"]
     order_id = int(callback.data.split("_")[1])
-    await callback.message.edit_text(text=f"{callback.message.text}\n\n🛑 ЗАЯВКА ВЗЯТА: @{callback.from_user.username}", reply_markup=None)
-    await bot.send_message(callback.from_user.id, f"Заказ №{order_id}. Напишите цену и время.")
+    
+    # Защита от дурака: проверяем, существует ли заказ и свободен ли он
+    order = ORDERS_DB.get(order_id)
+    
+    if not order:
+        await callback.answer("❌ Заказ не найден (возможно, устарел).", show_alert=True)
+        return
+        
+    if order.get("is_taken"):
+        await callback.answer("🛑 Этот заказ УЖЕ забрал другой мастер!", show_alert=True)
+        return
+
+    # Локируем заказ
+    order["is_taken"] = True
+    
+    # Обновляем интерфейс
+    new_text = f"{callback.message.text}\n\n✅ ВЗЯЛ: @{callback.from_user.username}"
+    await callback.message.edit_text(text=new_text, reply_markup=None)
+    
+    # Пишем мастеру
+    await bot.send_message(callback.from_user.id, f"✅ Принято! Заказ №{order_id}.\nНапишите клиенту цену и время выполнения.")
+    
+    # Сохраняем ID заказа в состояние, чтобы потом отправить цену именно по нему
     await state.set_state(MasterSteps.waiting_for_price)
     await state.update_data(order_id=order_id)
     await callback.answer()
