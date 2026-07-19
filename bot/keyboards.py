@@ -1,58 +1,36 @@
-from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# Код -> подпись на кнопке. Не меняйте код у существующих пунктов задним
-# числом — старые кнопки в чужих чатах должны продолжать работать.
-SERVICES = {
-    "wardrobe": "Шкаф 🗄",
-    "bed": "Кровать 🛏",
-    "chest": "Комод 🗃",
-    "living_room": "Гостиная 🛋",
-    "other": "Другое ✏️",
-}
+SERVICES = {"wardrobe": "Шкаф-купе", "wardrobe_r": "Шкаф распашной", "bed": "Кровать", "chest": "Комод", "living": "Гостиная", "other": "Другое"}
 
-
-def services_keyboard() -> InlineKeyboardMarkup:
+def services_keyboard():
     builder = InlineKeyboardBuilder()
-    for code, label in SERVICES.items():
-        builder.button(text=label, callback_data=f"svc_{code}")
-    builder.adjust(2)
-    return builder.as_markup()
+    for code, label in SERVICES.items(): builder.button(text=label, callback_data=f"svc_{code}")
+    return builder.adjust(2).as_markup()
 
-
-def elevator_keyboard() -> InlineKeyboardMarkup:
+def amount_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Есть лифт", callback_data="lift_yes")
-    builder.button(text="🚫 Нет лифта", callback_data="lift_no")
-    builder.adjust(2)
-    return builder.as_markup()
+    for n in ["1", "2", "3+"]: builder.button(text=n, callback_data=f"amt_{n}")
+    return builder.adjust(3).as_markup()
 
-
-def skip_keyboard(callback_data: str) -> InlineKeyboardMarkup:
-    """Кнопка "Пропустить" для необязательных шагов квиза (фото, комментарий)."""
+def condition_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="➡️ Пропустить", callback_data=callback_data)
-    return builder.as_markup()
+    builder.button(text="В коробках", callback_data="cond_new")
+    builder.button(text="Частично собрано", callback_data="cond_part")
+    builder.button(text="Почти готово", callback_data="cond_done")
+    return builder.adjust(1).as_markup()
 
-
-def confirm_order_keyboard() -> InlineKeyboardMarkup:
+def location_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Всё верно, отправить", callback_data="order_send")
-    builder.button(text="🔄 Начать заново", callback_data="order_restart")
-    builder.adjust(1)
-    return builder.as_markup()
+    builder.button(text="Москва (до МКАД)", callback_data="loc_msk")
+    builder.button(text="МО (указать район)", callback_data="loc_mo")
+    return builder.adjust(1).as_markup()
 
-
-def take_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
+def timing_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="🛠 Взять в работу", callback_data=f"take_{order_id}")
-    return builder.as_markup()
+    for t in ["Сегодня", "Завтра", "3 дня", "Неделя"]: builder.button(text=t, callback_data=f"time_{t}")
+    return builder.adjust(2).as_markup()
 
-
-def master_outcome_keyboard(order_id: int) -> InlineKeyboardMarkup:
-    """Показывается мастеру в личке после того, как он взял заказ и созвонился с клиентом."""
+def confirm_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Договорились, заказ подтверждён", callback_data=f"confirm_{order_id}")
-    builder.button(text="❌ Не получилось, вернуть в пул", callback_data=f"release_{order_id}")
-    builder.adjust(1)
+    builder.button(text="✅ Отправить заявку мастеру", callback_data="order_send")
     return builder.as_markup()
