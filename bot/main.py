@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -50,6 +51,13 @@ def main() -> None:
             config.webhook_url,
             secret_token=config.webhook_secret or None,
             allowed_updates=["message", "callback_query"],
+        )
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Оформить заявку на сборку"),
+                BotCommand(command="cancel", description="Отменить текущее оформление"),
+                BotCommand(command="help", description="Как это работает"),
+            ]
         )
         logger.info("Webhook установлен: %s", config.webhook_url)
 

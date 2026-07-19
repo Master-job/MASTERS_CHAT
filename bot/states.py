@@ -1,13 +1,10 @@
 from aiogram.fsm.state import State, StatesGroup
 
+
 class OrderSteps(StatesGroup):
-    entering_name = State()
-    entering_phone = State()
-    choosing_service = State()      # Шаг 1
-    choosing_amount = State()       # Шаг 2
-    choosing_condition = State()    # Шаг 3
-    uploading_photo = State()       # Шаг 4
-    choosing_location = State()     # Шаг 5 (Москва/МО)
-    entering_district = State()     # Шаг 5 (Район)
-    choosing_timing = State()       # Шаг 6
-    confirming = State()
+    """Один общий стейт на весь интерактивный сценарий (квиз, запись на
+    время, экран результата) — какой именно шаг сейчас, определяется
+    данными в FSMContext (data['screen'], data['step_index'] и т.п.),
+    а не отдельным State на каждый вопрос. Это и даёт единообразную
+    Назад/Пропустить/К мастеру логику на любом шаге."""
+    quiz = State()

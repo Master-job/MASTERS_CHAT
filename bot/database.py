@@ -7,11 +7,7 @@ import aiosqlite
 
 logger = logging.getLogger(__name__)
 
-# Жизненный цикл заявки:
-# new       -> заявка опубликована в чате мастеров, свободна
-# taken     -> мастер нажал "Взять в работу", звонит клиенту, обсуждает детали
-# confirmed -> мастер подтвердил, что договорился с клиентом (финал, заказ состоялся)
-# new (again) -> если мастер не смог договориться, заявка возвращается в пул
+# new -> taken -> confirmed (финал) | taken -> new (мастер не смог договориться)
 
 
 @dataclass
@@ -20,15 +16,18 @@ class Order:
     client_chat_id: int
     name: str
     phone: str
-    address: str
-    floor: str
-    has_elevator: bool
-    service: str
-    details: str
+    service: Optional[str]
+    volume: Optional[str]
+    demontage: Optional[str]
+    hardware: Optional[str]
+    district: Optional[str]
+    timing: Optional[str]
     photo_file_id: Optional[str]
-    order_date: str
-    order_time: str
-    comment: Optional[str]
+    price_low: Optional[int]
+    price_high: Optional[int]
+    order_date: Optional[str]
+    time_slot: Optional[str]
+    urgent: bool
     status: str
     taken_by_id: Optional[int]
     taken_by_username: Optional[str]
@@ -38,8 +37,6 @@ class Order:
 
 
 class Database:
-    """Асинхронная обёртка над SQLite — хранит заявки и их статус."""
-
     def __init__(self, path: str = "orders.db"):
         self.path = path
         self._conn: Optional[aiosqlite.Connection] = None
@@ -52,17 +49,20 @@ class Database:
             CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 client_chat_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                address TEXT NOT NULL,
-                floor TEXT NOT NULL,
-                has_elevator INTEGER NOT NULL,
-                service TEXT NOT NULL,
-                details TEXT NOT NULL,
+                name TEXT,
+                phone TEXT,
+                service TEXT,
+                volume TEXT,
+                demontage TEXT,
+                hardware TEXT,
+                district TEXT,
+                timing TEXT,
                 photo_file_id TEXT,
-                order_date TEXT NOT NULL,
-                order_time TEXT NOT NULL,
-                comment TEXT,
+                price_low INTEGER,
+                price_high INTEGER,
+                order_date TEXT,
+                time_slot TEXT,
+                urgent INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'new',
                 taken_by_id INTEGER,
                 taken_by_username TEXT,
@@ -82,55 +82,34 @@ class Database:
     @staticmethod
     def _row_to_order(row: aiosqlite.Row) -> Order:
         return Order(
-            id=row["id"],
-            client_chat_id=row["client_chat_id"],
-            name=row["name"],
-            phone=row["phone"],
-            address=row["address"],
-            floor=row["floor"],
-            has_elevator=bool(row["has_elevator"]),
-            service=row["service"],
-            details=row["details"],
+            id=row["id"], client_chat_id=row["client_chat_id"],
+            name=row["name"], phone=row["phone"],
+            service=row["service"], volume=row["volume"],
+            demontage=row["demontage"], hardware=row["hardware"],
+            district=row["district"], timing=row["timing"],
             photo_file_id=row["photo_file_id"],
-            order_date=row["order_date"],
-            order_time=row["order_time"],
-            comment=row["comment"],
-            status=row["status"],
-            taken_by_id=row["taken_by_id"],
-            taken_by_username=row["taken_by_username"],
-            group_chat_id=row["group_chat_id"],
-            group_message_id=row["group_message_id"],
+            price_low=row["price_low"], price_high=row["price_high"],
+            order_date=row["order_date"], time_slot=row["time_slot"],
+            urgent=bool(row["urgent"]), status=row["status"],
+            taken_by_id=row["taken_by_id"], taken_by_username=row["taken_by_username"],
+            group_chat_id=row["group_chat_id"], group_message_id=row["group_message_id"],
             created_at=row["created_at"],
         )
 
-    async def create_order(
-        self,
-        client_chat_id: int,
-        name: str,
-        phone: str,
-        address: str,
-        floor: str,
-        has_elevator: bool,
-        service: str,
-        details: str,
-        photo_file_id: Optional[str],
-        order_date: str,
-        order_time: str,
-        comment: Optional[str],
-    ) -> int:
+    async def create_order(self, client_chat_id: int, urgent: bool = False, **fields) -> int:
+        columns = [
+            "service", "volume", "demontage", "hardware", "district", "timing",
+            "photo_file_id", "name", "phone", "price_low", "price_high",
+            "order_date", "time_slot",
+        ]
+        values = [fields.get(col) for col in columns]
+
         cursor = await self._conn.execute(
-            """
-            INSERT INTO orders (
-                client_chat_id, name, phone, address, floor, has_elevator,
-                service, details, photo_file_id, order_date, order_time,
-                comment, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+            f"""
+            INSERT INTO orders (client_chat_id, urgent, status, created_at, {", ".join(columns)})
+            VALUES (?, ?, 'new', ?, {", ".join("?" for _ in columns)})
             """,
-            (
-                client_chat_id, name, phone, address, floor, int(has_elevator),
-                service, details, photo_file_id, order_date, order_time,
-                comment, datetime.now(timezone.utc).isoformat(),
-            ),
+            [client_chat_id, int(urgent), datetime.now(timezone.utc).isoformat(), *values],
         )
         await self._conn.commit()
         return cursor.lastrowid
@@ -148,7 +127,6 @@ class Database:
         return self._row_to_order(row) if row else None
 
     async def take_order(self, order_id: int, master_id: int, master_username: str) -> bool:
-        """Атомарно переводит заявку new -> taken. True, если именно этот вызов победил."""
         cursor = await self._conn.execute(
             "UPDATE orders SET status = 'taken', taken_by_id = ?, taken_by_username = ? "
             "WHERE id = ? AND status = 'new'",
@@ -158,7 +136,6 @@ class Database:
         return cursor.rowcount > 0
 
     async def confirm_order(self, order_id: int, master_id: int) -> bool:
-        """Мастер подтвердил, что договорился с клиентом. Финальный статус."""
         cursor = await self._conn.execute(
             "UPDATE orders SET status = 'confirmed' WHERE id = ? AND status = 'taken' "
             "AND taken_by_id = ?",
@@ -168,7 +145,6 @@ class Database:
         return cursor.rowcount > 0
 
     async def release_order(self, order_id: int, master_id: int) -> bool:
-        """Мастер не смог договориться — заявка возвращается в пул для остальных."""
         cursor = await self._conn.execute(
             "UPDATE orders SET status = 'new', taken_by_id = NULL, taken_by_username = NULL "
             "WHERE id = ? AND status = 'taken' AND taken_by_id = ?",
