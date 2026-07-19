@@ -1,10 +1,9 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-SERVICES = {"wardrobe": "Шкаф-купе", "wardrobe_r": "Шкаф распашной", "bed": "Кровать", "chest": "Комод", "living": "Гостиная", "other": "Другое"}
-
 def services_keyboard():
     builder = InlineKeyboardBuilder()
-    for code, label in SERVICES.items(): builder.button(text=label, callback_data=f"svc_{code}")
+    items = ["Шкаф", "Кровать", "Комод", "Гостиная", "Другое"]
+    for i in items: builder.button(text=i, callback_data=f"svc_{i}")
     return builder.adjust(2).as_markup()
 
 def amount_keyboard():
@@ -15,15 +14,15 @@ def amount_keyboard():
 def condition_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="В коробках", callback_data="cond_new")
-    builder.button(text="Частично собрано", callback_data="cond_part")
+    builder.button(text="Частично", callback_data="cond_part")
     builder.button(text="Почти готово", callback_data="cond_done")
     return builder.adjust(1).as_markup()
 
 def location_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="Москва (до МКАД)", callback_data="loc_msk")
-    builder.button(text="МО (указать район)", callback_data="loc_mo")
-    return builder.adjust(1).as_markup()
+    builder.button(text="Москва", callback_data="loc_msk")
+    builder.button(text="МО", callback_data="loc_mo")
+    return builder.as_markup()
 
 def timing_keyboard():
     builder = InlineKeyboardBuilder()
@@ -32,5 +31,5 @@ def timing_keyboard():
 
 def confirm_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Отправить заявку мастеру", callback_data="order_send")
+    builder.button(text="🚀 Отправить мастеру", callback_data="order_send")
     return builder.as_markup()
